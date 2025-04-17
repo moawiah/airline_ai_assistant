@@ -13,6 +13,13 @@ import pygame
 import time
 from tools import price_function, get_ticket_price, make_a_booking, booking_function
 import ollama
+import anthropic
+from anthropic import Anthropic
+import whisper
+import sounddevice as sd
+import soundfile as sf
+import numpy as np
+
 # And this is included in a list of tools:
 
 tools = [{"type": "function", "function": price_function}, {"type": "function", "function": booking_function}]
@@ -40,24 +47,26 @@ def chat(history):
     messages = [{"role": "system", "content": system_message}] + history
     response = openai.chat.completions.create(model=MODEL, messages=messages, tools=tools)
     image = None
-    
+
     if response.choices[0].finish_reason == "tool_calls":
         message = response.choices[0].message
         response, city = handle_tool_call(message)
         messages.append(message)
         messages.append(response)
-        # Only generate image for price checks, not for bookings
         if message.tool_calls[0].function.name == "get_ticket_price":
             # image = artist(city)
             pass
         response = openai.chat.completions.create(model=MODEL, messages=messages)
-        
-    reply = response.choices[0].message.content
-    history += [{"role":"assistant", "content":reply}]
 
-    talker(reply)
-    translated_reply = ollama_translator(reply)
-    
+    reply = response.choices[0].message.content
+
+    # ✅ SAFETY CHECK: Never add empty or None replies
+    if reply:
+        history.append({"role": "assistant", "content": str(reply)})
+        talker(reply)
+    else:
+        history.append({"role": "assistant", "content": "Sorry, no response available."})
+
     return history, image
 
 # We have to write that function handle_tool_call:
@@ -189,27 +198,118 @@ def translate_message(history):
 def clear_chat():
     return [], ""
 
+def convert_audio_to_text(audio_file_path):
+    """
+    Converts audio to text using OpenAI's Whisper model.
+    Supports MP3, WAV, and other common audio formats.
+    
+    Args:
+        audio_file_path (str): Path to the audio file
+        
+    Returns:
+        str: Transcribed text
+    """
+    try:
+        # Load the Whisper model
+        model = whisper.load_model("base")
+        
+        # Transcribe the audio file
+        result = model.transcribe(audio_file_path)
+        
+        # Return the transcribed text
+        return result["text"]
+        
+    except Exception as e:
+        print(f"Audio transcription error: {str(e)}")
+        return f"Transcription failed: {str(e)}"
+    
+def handle_audio(audio_file, history):
+    history = history or []
+    if audio_file:
+        try:
+            # Ensure the audio file exists and is readable
+            if not os.path.exists(audio_file):
+                raise Exception("Audio file not found")
+            
+            # Convert audio to text
+            try:
+                transcribed_text = convert_audio_to_text(audio_file)
+            except Exception as e:
+                print(f"Transcription error: {str(e)}")
+                return gr.Audio(value=None), history
+            
+            # Add to chat history
+            if transcribed_text:
+                history.append({"role": "user", "content": str(transcribed_text)})
+            
+            # Clean up the temporary audio file
+            try:
+                if os.path.exists(audio_file):
+                    os.remove(audio_file)
+            except Exception as e:
+                print(f"Warning: Could not delete audio file: {str(e)}")
+            
+            return history
+        except Exception as e:
+            print(f"Error processing audio: {str(e)}")
+            return history
+    return history
+    
 if __name__ == "__main__":
     # gr.ChatInterface(fn=chat, type="messages").launch()
     # talker("Hello, how are you?")
     # Passing in inbrowser=True in the last line will cause a Gradio window to pop up immediately.
 
+    # print(ollama_translator("Hello, how are you?"))
+    # print(convert_audio_to_text("output_audio_1744898241.4550629.mp3"))
+
     with gr.Blocks() as ui:
         with gr.Row():
             with gr.Column():
                 chatbot = gr.Chatbot(height=500, type="messages")
-                entry = gr.Textbox(label="Chat with our AI Assistant:")
+                with gr.Row():
+                    entry = gr.Textbox(label="Chat with our AI Assistant:")
+                    audio_input = gr.Audio(
+                        type="filepath", 
+                        label="Or speak your message:", 
+                        interactive=True,
+                        format="wav",
+                        # source="microphone"
+                    )
                 clear = gr.Button("Clear")
             with gr.Column():
+                translation_output = gr.Textbox(label="Translation (Arabic):", lines=5)
                 image_output = gr.Image(height=500)
-            with gr.Column():
-                translation_output = gr.Textbox(label="Translation (German):", lines=15)
 
         def do_entry(message, history):
-            history += [{"role":"user", "content":message}]
+            history = history or []
+            if message:
+                history.append({"role": "user", "content": str(message)})
             return "", history
 
+        def translate_message(history):
+            if not history:
+                return ""
+            last_message = history[-1]
+            message_content = last_message.get('content', '')
+            if message_content:
+                return ollama_translator(message_content)
+            return ""
+
+        def clear_chat():
+            return [], ""
+
+        # Handle text input
         entry.submit(do_entry, inputs=[entry, chatbot], outputs=[entry, chatbot]).then(
+            chat, inputs=chatbot, outputs=[chatbot, image_output]
+        ).then(
+            translate_message, inputs=chatbot, outputs=translation_output
+        )
+
+        # Handle audio input
+        audio_input.stop_recording(
+            handle_audio, inputs=[audio_input, chatbot], outputs=[chatbot]
+        ).then(
             chat, inputs=chatbot, outputs=[chatbot, image_output]
         ).then(
             translate_message, inputs=chatbot, outputs=translation_output
@@ -218,5 +318,4 @@ if __name__ == "__main__":
         clear.click(clear_chat, inputs=None, outputs=[chatbot, translation_output])
 
     ui.launch(inbrowser=False)
-
-    # print(ollama_translator("Hello, how are you?"))
+    
