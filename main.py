@@ -12,6 +12,7 @@ from IPython.display import Audio, display
 import pygame
 import time
 from tools import price_function, get_ticket_price, make_a_booking, booking_function
+import ollama
 # And this is included in a list of tools:
 
 tools = [{"type": "function", "function": price_function}, {"type": "function", "function": booking_function}]
@@ -55,6 +56,7 @@ def chat(history):
     history += [{"role":"assistant", "content":reply}]
 
     talker(reply)
+    translated_reply = ollama_translator(reply)
     
     return history, image
 
@@ -131,7 +133,61 @@ def talker(message):
     while pygame.mixer.music.get_busy():
         continue
 
+def ollama_translator(text, target_language="German"):
+    """
+    Translates text to the specified language using Ollama.
+    
+    Args:
+        text (str): The text to translate
+        target_language (str): The language to translate to (default: Arabic)
+    
+    Returns:
+        str: The translated text
+    """
+    try:
+        # Create a prompt that instructs the model to translate
+        prompt = f"Translate the following text to {target_language}. Only output the translation, nothing else:\n\n{text}"
+        
+        response = ollama.chat(
+            model='llama3.2:latest',  # or any other model you have installed
+            messages=[
+                {"role": "system", "content": "You are a professional translator. Translate the given text accurately."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        translated_text = response['message']['content'].strip()
+        return translated_text
+        
+    except Exception as e:
+        print(f"Translation error: {str(e)}")
+        return f"Translation failed: {str(e)}"
+    
+def translate_message(history):
+    """
+    Translates the last message in the chat history.
+    
+    Args:
+        history (list): List of chat messages
+        
+    Returns:
+        str: Translated text of the last message
+    """
+    if not history:
+        return ""
+    
+    # Get the last message from history
+    last_message = history[-1]
+    
+    # Extract the content from the last message
+    message_content = last_message.get('content', '')
+    
+    if message_content:
+        return ollama_translator(message_content)
+    return ""
 
+def clear_chat():
+    return [], ""
 
 if __name__ == "__main__":
     # gr.ChatInterface(fn=chat, type="messages").launch()
@@ -140,12 +196,14 @@ if __name__ == "__main__":
 
     with gr.Blocks() as ui:
         with gr.Row():
-            chatbot = gr.Chatbot(height=500, type="messages")
-            image_output = gr.Image(height=500)
-        with gr.Row():
-            entry = gr.Textbox(label="Chat with our AI Assistant:")
-        with gr.Row():
-            clear = gr.Button("Clear")
+            with gr.Column():
+                chatbot = gr.Chatbot(height=500, type="messages")
+                entry = gr.Textbox(label="Chat with our AI Assistant:")
+                clear = gr.Button("Clear")
+            with gr.Column():
+                image_output = gr.Image(height=500)
+            with gr.Column():
+                translation_output = gr.Textbox(label="Translation (German):", lines=15)
 
         def do_entry(message, history):
             history += [{"role":"user", "content":message}]
@@ -153,7 +211,12 @@ if __name__ == "__main__":
 
         entry.submit(do_entry, inputs=[entry, chatbot], outputs=[entry, chatbot]).then(
             chat, inputs=chatbot, outputs=[chatbot, image_output]
+        ).then(
+            translate_message, inputs=chatbot, outputs=translation_output
         )
-        clear.click(lambda: None, inputs=None, outputs=chatbot, queue=False)
+        
+        clear.click(clear_chat, inputs=None, outputs=[chatbot, translation_output])
 
     ui.launch(inbrowser=False)
+
+    # print(ollama_translator("Hello, how are you?"))
