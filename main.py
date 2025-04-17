@@ -11,10 +11,11 @@ from PIL import Image
 from IPython.display import Audio, display
 import pygame
 import time
-from tools import price_function, get_ticket_price
+from tools import price_function, get_ticket_price, make_a_booking, booking_function
 # And this is included in a list of tools:
 
-tools = [{"type": "function", "function": price_function}]
+tools = [{"type": "function", "function": price_function}, {"type": "function", "function": booking_function}]
+# tools = [price_function, booking_function]
 
 # System messages
 system_message = "You are a helpful assistant for an Airline called FlightAI. "
@@ -39,18 +40,20 @@ def chat(history):
     response = openai.chat.completions.create(model=MODEL, messages=messages, tools=tools)
     image = None
     
-    if response.choices[0].finish_reason=="tool_calls":
+    if response.choices[0].finish_reason == "tool_calls":
         message = response.choices[0].message
         response, city = handle_tool_call(message)
         messages.append(message)
         messages.append(response)
-        image = artist(city)
+        # Only generate image for price checks, not for bookings
+        if message.tool_calls[0].function.name == "get_ticket_price":
+            # image = artist(city)
+            pass
         response = openai.chat.completions.create(model=MODEL, messages=messages)
         
     reply = response.choices[0].message.content
     history += [{"role":"assistant", "content":reply}]
 
-    # Comment out or delete the next line if you'd rather skip Audio for now..
     talker(reply)
     
     return history, image
@@ -60,15 +63,38 @@ def chat(history):
 def handle_tool_call(message):
     print(f"Handling tool call: {message}")
     tool_call = message.tool_calls[0]
+    function_name = tool_call.function.name
     arguments = json.loads(tool_call.function.arguments)
-    city = arguments.get('destination_city')
-    price = get_ticket_price(city)
-    response = {
-        "role": "tool",
-        "content": json.dumps({"destination_city": city,"price": price}),
-        "tool_call_id": tool_call.id
-    }
-    return response, city
+    
+    if function_name == "get_ticket_price":
+        city = arguments.get('destination_city')
+        price = get_ticket_price(city)
+        response = {
+            "role": "tool",
+            "content": json.dumps({"destination_city": city, "price": price}),
+            "tool_call_id": tool_call.id
+        }
+        return response, city
+        
+    elif function_name == "make_a_booking":
+        city = arguments.get('destination_city')
+        customer_name = arguments.get('customer_name')
+        customer_id = arguments.get('customer_id')
+        booking_result = make_a_booking(city, customer_name, customer_id)
+        response = {
+            "role": "tool",
+            "content": json.dumps({
+                "destination_city": city,
+                "customer_name": customer_name,
+                "customer_id": customer_id,
+                "booking_result": booking_result
+            }),
+            "tool_call_id": tool_call.id
+        }
+        return response, city
+        
+    else:
+        raise ValueError(f"Unknown function: {function_name}")
 
 def artist(city):
     image_response = openai.images.generate(
@@ -130,4 +156,4 @@ if __name__ == "__main__":
         )
         clear.click(lambda: None, inputs=None, outputs=chatbot, queue=False)
 
-    ui.launch(inbrowser=True)
+    ui.launch(inbrowser=False)

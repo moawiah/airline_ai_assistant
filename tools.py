@@ -7,6 +7,12 @@ def get_ticket_price(destination_city):
     city = destination_city.lower()
     return ticket_prices.get(city, "Unknown")
 
+def make_a_booking(destination_city, customer_name, customer_id):
+    print(f"Tool make_a_booking called for {destination_city}")
+    city = destination_city.lower()
+    print(f"Customer name: {customer_name}, Customer ID: {customer_id}")
+    return True
+
 # There's a particular dictionary structure that's required to describe our function:
 
 price_function = {
@@ -24,3 +30,28 @@ price_function = {
         "additionalProperties": False
     }
 }
+
+booking_function = {
+    "name": "make_a_booking",
+    "description": "Make a booking for a customer to a destination city. Call this when a customer wants to book a flight. You can get the customer's name and ID by directly asking the customer. For example, you can say 'What is your name?' or 'What is your ID?'",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "destination_city": {
+                "type": "string",
+                "description": "The city that the customer wants to travel to",
+            },
+            "customer_name": {
+                "type": "string",
+                "description": "The name of the customer making the booking",
+            },
+            "customer_id": {
+                "type": "string",
+                "description": "The unique identifier for the customer",
+            }
+        },
+        "required": ["destination_city", "customer_name", "customer_id"],
+        "additionalProperties": False
+    }
+}
+
