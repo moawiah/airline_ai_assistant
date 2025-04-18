@@ -227,33 +227,29 @@ def handle_audio(audio_file, history):
     history = history or []
     if audio_file:
         try:
-            # Ensure the audio file exists and is readable
             if not os.path.exists(audio_file):
                 raise Exception("Audio file not found")
-            
-            # Convert audio to text
+
             try:
                 transcribed_text = convert_audio_to_text(audio_file)
             except Exception as e:
                 print(f"Transcription error: {str(e)}")
-                return gr.Audio(value=None), history
-            
-            # Add to chat history
+                return history, None  # 🛠️ match expected outputs
+
             if transcribed_text:
                 history.append({"role": "user", "content": str(transcribed_text)})
-            
-            # Clean up the temporary audio file
+
             try:
                 if os.path.exists(audio_file):
                     os.remove(audio_file)
             except Exception as e:
                 print(f"Warning: Could not delete audio file: {str(e)}")
-            
-            return history
+
+            return history, None  # ✅ return both expected outputs
         except Exception as e:
             print(f"Error processing audio: {str(e)}")
-            return history
-    return history
+            return history, None
+    return history, None
     
 if __name__ == "__main__":
     # gr.ChatInterface(fn=chat, type="messages").launch()
@@ -308,7 +304,7 @@ if __name__ == "__main__":
 
         # Handle audio input
         audio_input.stop_recording(
-            handle_audio, inputs=[audio_input, chatbot], outputs=[chatbot]
+            handle_audio, inputs=[audio_input, chatbot], outputs=[chatbot, image_output]
         ).then(
             chat, inputs=chatbot, outputs=[chatbot, image_output]
         ).then(
