@@ -272,7 +272,7 @@ if __name__ == "__main__":
                     )
                 clear = gr.Button("Clear")
             with gr.Column():
-                translation_output = gr.Textbox(label="Translation (Arabic):", lines=5)
+                translation_output = gr.Textbox(label="Translation (German):", lines=5)
                 image_output = gr.Image(height=500)
 
         def do_entry(message, history):
